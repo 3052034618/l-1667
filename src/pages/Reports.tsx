@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   FileText, Download, Filter, Calendar, ChevronRight, Check,
   FileJson, FileSpreadsheet, Database, History, Eye, Plus, Trash2,
@@ -6,6 +7,7 @@ import {
 } from 'lucide-react';
 import { mockTasks, mockMaterials } from '../data/mockData';
 import { cn, formatDate } from '../lib/utils';
+import { downloadFile } from '../lib/axios';
 import { useReportStore } from '../store/reportStore';
 import type { ExportFormat, ReportGenerateOptions, ExportFilters } from '../types';
 
@@ -41,6 +43,7 @@ const formatBadgeColors: Record<string, string> = {
 };
 
 export default function Reports() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<ReportTabType>('pdf');
   const [system, setSystem] = useState('全部');
   const [sg, setSg] = useState('全部');
@@ -51,9 +54,13 @@ export default function Reports() {
   const [selectedFields, setSelectedFields] = useState<string[]>(['band_structure', 'dos', 'z2', 'params']);
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('csv');
   const [pdfDownloadUrl, setPdfDownloadUrl] = useState<string | null>(null);
+  const [pdfFilename, setPdfFilename] = useState<string>('');
   const [exportDownloadUrl, setExportDownloadUrl] = useState<string | null>(null);
+  const [exportFilename, setExportFilename] = useState<string>('');
   const [pdfSuccess, setPdfSuccess] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
+  const [authExpired, setAuthExpired] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const {
     exportHistory,
@@ -88,6 +95,8 @@ export default function Reports() {
   const handleGeneratePDF = async () => {
     setPdfSuccess(false);
     setPdfDownloadUrl(null);
+    setPdfFilename('');
+    setAuthExpired(false);
 
     const options: ReportGenerateOptions = {
       includeCover: true,
@@ -100,6 +109,7 @@ export default function Reports() {
     const url = await generatePDF(selectedTaskIds, options);
     if (url) {
       setPdfDownloadUrl(url);
+      setPdfFilename(`topoflow_report_${Date.now()}.pdf`);
       setPdfSuccess(true);
       setTimeout(() => setPdfSuccess(false), 3000);
     }
@@ -108,6 +118,8 @@ export default function Reports() {
   const handleExportData = async () => {
     setExportSuccess(false);
     setExportDownloadUrl(null);
+    setExportFilename('');
+    setAuthExpired(false);
 
     const filters: ExportFilters = {
       system: system !== '全部' ? system : undefined,
@@ -121,8 +133,19 @@ export default function Reports() {
     const url = await exportData(selectedTaskIds.length > 0 ? selectedTaskIds : completedTasks.map((t) => t.id), selectedFields, selectedFormat, filters);
     if (url) {
       setExportDownloadUrl(url);
+      setExportFilename(`topoflow_export_${Date.now()}.${selectedFormat}`);
       setExportSuccess(true);
       setTimeout(() => setExportSuccess(false), 3000);
+    }
+  };
+
+  const handleDownload = async (url: string, filename: string) => {
+    setDownloading(true);
+    setAuthExpired(false);
+    const result = await downloadFile(url, filename);
+    setDownloading(false);
+    if (result.expired) {
+      setAuthExpired(true);
     }
   };
 
@@ -249,6 +272,18 @@ export default function Reports() {
             </div>
 
             <div className="p-6">
+              {authExpired && (
+                <div className="flex items-center gap-2 p-3 mb-4 rounded-lg bg-danger/10 border border-danger/30 text-danger text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>登录已过期，请</span>
+                  <button
+                    onClick={() => navigate('/login')}
+                    className="underline font-medium hover:text-red-300"
+                  >
+                    重新登录
+                  </button>
+                </div>
+              )}
               {activeTab === 'pdf' ? (
                 <div className="space-y-6">
                   {pdfSuccess && (
@@ -377,14 +412,21 @@ export default function Reports() {
                           )}
                         </button>
                         {pdfDownloadUrl ? (
-                          <a
-                            href={pdfDownloadUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="w-full py-3 rounded-lg text-sm font-medium text-white bg-success hover:bg-success/90 transition-all flex items-center justify-center gap-1.5"
+                          <button
+                            onClick={() => handleDownload(pdfDownloadUrl, pdfFilename)}
+                            disabled={downloading}
+                            className="w-full py-3 rounded-lg text-sm font-medium text-white bg-success hover:bg-success/90 transition-all flex items-center justify-center gap-1.5 disabled:opacity-60"
                           >
-                            <Download className="w-4 h-4" /> 下载报告
-                          </a>
+                            {downloading ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" /> 下载中...
+                              </>
+                            ) : (
+                              <>
+                                <Download className="w-4 h-4" /> 下载报告
+                              </>
+                            )}
+                          </button>
                         ) : (
                           <button
                             disabled={selectedTaskIds.length === 0 || !pdfDownloadUrl}
@@ -502,14 +544,21 @@ export default function Reports() {
                       )}
                     </button>
                     {exportDownloadUrl && (
-                      <a
-                        href={exportDownloadUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-6 py-2.5 rounded-lg text-sm font-medium text-white bg-success hover:bg-success/90 transition-all flex items-center gap-1.5"
+                      <button
+                        onClick={() => handleDownload(exportDownloadUrl, exportFilename)}
+                        disabled={downloading}
+                        className="px-6 py-2.5 rounded-lg text-sm font-medium text-white bg-success hover:bg-success/90 transition-all flex items-center gap-1.5 disabled:opacity-60"
                       >
-                        <Download className="w-4 h-4" /> 下载
-                      </a>
+                        {downloading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" /> 下载中...
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-4 h-4" /> 下载
+                          </>
+                        )}
+                      </button>
                     )}
                     <span className="text-xs text-slate-500">
                       将导出 {selectedTaskIds.length > 0 ? selectedTaskIds.length : completedTasks.length} 个任务的{' '}
@@ -551,15 +600,17 @@ export default function Reports() {
                               {item.type}
                             </span>
                             <div className="flex items-center gap-1">
-                              <a
-                                href={item.downloadUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-1.5 rounded-md text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors"
-                                onClick={(e) => e.stopPropagation()}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownload(item.downloadUrl, item.filename);
+                                }}
+                                disabled={downloading}
+                                className="p-1.5 rounded-md text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-40"
+                                title="下载文件"
                               >
                                 <Download className="w-4 h-4" />
-                              </a>
+                              </button>
                               <button
                                 onClick={(e) => handleDeleteHistory(item.id, e)}
                                 className="p-1.5 rounded-md text-slate-400 hover:text-danger hover:bg-danger/10 transition-colors"

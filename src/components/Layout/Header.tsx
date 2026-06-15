@@ -11,7 +11,9 @@ import {
   Slash,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
+import { useTaskStore } from '@/store/taskStore';
 import { cn } from '@/lib/utils';
+import CreateTaskModal from '@/components/Task/CreateTaskModal';
 
 const breadcrumbMap: Record<string, { label: string; path?: string }[]> = {
   '/dashboard': [{ label: '统计看板' }],
@@ -27,8 +29,10 @@ export default function Header() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
+  const createTask = useTaskStore((s) => s.createTask);
   const [searchQuery, setSearchQuery] = useState('');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   const unreadCount = 5;
@@ -78,7 +82,24 @@ export default function Header() {
   };
 
   const handleNewTask = () => {
-    navigate('/tasks/new');
+    setCreateModalOpen(true);
+  };
+
+  const handleCreateTask = (data: any) => {
+    if (!user) return;
+    createTask({
+      title: data.title,
+      description: '通过顶部新建任务创建',
+      formula: data.formula,
+      crystalStructure: data.crystalStructure,
+      calculationParams: data.calculationParams,
+      tags: ['新建'],
+      creatorId: user.id,
+      creatorName: user.realName,
+      groupId: user.groupId,
+    });
+    setCreateModalOpen(false);
+    navigate('/tasks');
   };
 
   return (
@@ -180,6 +201,11 @@ export default function Header() {
           )}
         </div>
       </div>
+      <CreateTaskModal
+        open={createModalOpen}
+        onClose={() => setCreateModalOpen(false)}
+        onSubmit={handleCreateTask}
+      />
     </header>
   );
 }

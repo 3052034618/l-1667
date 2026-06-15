@@ -25,6 +25,14 @@ export default function Approvals() {
 
   const phdPending = useMemo(() => tasks.filter((t) => t.status === 'pending_phd_approval'), [tasks]);
   const supervisorPending = useMemo(() => tasks.filter((t) => t.status === 'pending_supervisor_approval'), [tasks]);
+
+  const myPending = useMemo(() => {
+    if (!user) return [];
+    if (user.role === 'phd_student') return phdPending;
+    if (user.role === 'supervisor') return supervisorPending;
+    return [...phdPending, ...supervisorPending];
+  }, [user, phdPending, supervisorPending]);
+
   const allPending = useMemo(() => [...phdPending, ...supervisorPending], [phdPending, supervisorPending]);
 
   const approvedThisWeek = useMemo(() => tasks.filter((t) => {
@@ -47,8 +55,8 @@ export default function Approvals() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === allPending.length) setSelectedIds([]);
-    else setSelectedIds(allPending.map((t) => t.id));
+    if (selectedIds.length === myPending.length) setSelectedIds([]);
+    else setSelectedIds(myPending.map((t) => t.id));
   };
 
   const getApprovalType = (t: ComputationTask) => (t.status === 'pending_phd_approval' ? 'phd' : 'supervisor');
@@ -63,12 +71,12 @@ export default function Approvals() {
 
   const handleApprove = (id: string) => {
     if (!user) return;
-    const task = allPending.find((t) => t.id === id);
+    const task = myPending.find((t) => t.id === id);
     if (!task) return;
-    
+
     const approvalType = user.role === 'phd_student' ? 'phd' : 'supervisor';
     submitApproval(id, approvalType, 'approved', comments[id] || '', user.id, user.realName);
-    
+
     setComments((prev) => {
       const newComments = { ...prev };
       delete newComments[id];
@@ -80,12 +88,12 @@ export default function Approvals() {
 
   const handleReject = (id: string) => {
     if (!user) return;
-    const task = allPending.find((t) => t.id === id);
+    const task = myPending.find((t) => t.id === id);
     if (!task) return;
-    
+
     const approvalType = user.role === 'phd_student' ? 'phd' : 'supervisor';
     submitApproval(id, approvalType, 'rejected', comments[id] || '', user.id, user.realName);
-    
+
     setComments((prev) => {
       const newComments = { ...prev };
       delete newComments[id];
@@ -97,46 +105,40 @@ export default function Approvals() {
 
   const handleBatchApprove = () => {
     if (!user || selectedIds.length === 0) return;
-    
+
     const approvalType = user.role === 'phd_student' ? 'phd' : 'supervisor';
-    const selectedTasks = tasks.filter((t) => selectedIds.includes(t.id));
-    const phdTasks = selectedTasks.filter((t) => t.status === 'pending_phd_approval').map((t) => t.id);
-    const supervisorTasks = selectedTasks.filter((t) => t.status === 'pending_supervisor_approval').map((t) => t.id);
-    
-    if (phdTasks.length > 0 && approvalType === 'phd') {
-      batchSubmitApproval(phdTasks, 'phd', 'approved', '', user.id, user.realName);
+    const eligibleIds = myPending
+      .filter((t) => selectedIds.includes(t.id))
+      .map((t) => t.id);
+
+    if (eligibleIds.length > 0) {
+      batchSubmitApproval(eligibleIds, approvalType, 'approved', '', user.id, user.realName);
     }
-    if (supervisorTasks.length > 0 && approvalType === 'supervisor') {
-      batchSubmitApproval(supervisorTasks, 'supervisor', 'approved', '', user.id, user.realName);
-    }
-    
+
     setSelectedIds([]);
     setComments({});
   };
 
   const handleBatchReject = () => {
     if (!user || selectedIds.length === 0) return;
-    
+
     const approvalType = user.role === 'phd_student' ? 'phd' : 'supervisor';
-    const selectedTasks = tasks.filter((t) => selectedIds.includes(t.id));
-    const phdTasks = selectedTasks.filter((t) => t.status === 'pending_phd_approval').map((t) => t.id);
-    const supervisorTasks = selectedTasks.filter((t) => t.status === 'pending_supervisor_approval').map((t) => t.id);
-    
-    if (phdTasks.length > 0 && approvalType === 'phd') {
-      batchSubmitApproval(phdTasks, 'phd', 'rejected', '', user.id, user.realName);
+    const eligibleIds = myPending
+      .filter((t) => selectedIds.includes(t.id))
+      .map((t) => t.id);
+
+    if (eligibleIds.length > 0) {
+      batchSubmitApproval(eligibleIds, approvalType, 'rejected', '', user.id, user.realName);
     }
-    if (supervisorTasks.length > 0 && approvalType === 'supervisor') {
-      batchSubmitApproval(supervisorTasks, 'supervisor', 'rejected', '', user.id, user.realName);
-    }
-    
+
     setSelectedIds([]);
     setComments({});
   };
 
   const displayTasks = useMemo(() => {
-    if (activeTab === 'pending') return allPending;
+    if (activeTab === 'pending') return myPending;
     return tasks.filter((t) => t.status === 'completed').slice(0, 8);
-  }, [activeTab, allPending, tasks]);
+  }, [activeTab, myPending, tasks]);
 
   return (
     <div className="space-y-6">
@@ -148,18 +150,7 @@ export default function Approvals() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-700/50 backdrop-blur-sm relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-glow-cyan opacity-30" />
-          <div className="relative flex items-start justify-between">
-            <div>
-              <p className="text-sm text-slate-400 mb-1">待博士生审批</p>
-              <p className="text-3xl font-bold text-cyan-400">{phdPending.length}</p>
-            </div>
-            <div className="p-2 rounded-lg bg-cyan-500/15">
-              <UserCheck className="w-5 h-5 text-cyan-400" />
-            </div>
-          </div>
-        </div>
+        {(!user || user.role !== 'phd_student') && (
         <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-700/50 backdrop-blur-sm relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-glow-purple opacity-30" />
           <div className="relative flex items-start justify-between">
@@ -172,6 +163,21 @@ export default function Approvals() {
             </div>
           </div>
         </div>
+        )}
+        {(!user || user.role !== 'supervisor') && (
+        <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-700/50 backdrop-blur-sm relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-glow-cyan opacity-30" />
+          <div className="relative flex items-start justify-between">
+            <div>
+              <p className="text-sm text-slate-400 mb-1">待博士生审批</p>
+              <p className="text-3xl font-bold text-cyan-400">{phdPending.length}</p>
+            </div>
+            <div className="p-2 rounded-lg bg-cyan-500/15">
+              <UserCheck className="w-5 h-5 text-cyan-400" />
+            </div>
+          </div>
+        </div>
+        )}
         <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-700/50 backdrop-blur-sm">
           <div className="flex items-start justify-between">
             <div>
@@ -200,7 +206,7 @@ export default function Approvals() {
         <div className="flex items-center justify-between border-b border-slate-700/50">
           <div className="flex">
             {[
-              { key: 'pending', label: '待我审批', count: allPending.length },
+              { key: 'pending', label: '待我审批', count: myPending.length },
               { key: 'approved', label: '我已审批' },
             ].map((tab) => (
               <button
@@ -252,7 +258,7 @@ export default function Approvals() {
                   <th className="w-12 px-4 py-3">
                     <input
                       type="checkbox"
-                      checked={selectedIds.length === allPending.length && allPending.length > 0}
+                      checked={selectedIds.length === myPending.length && myPending.length > 0}
                       onChange={toggleSelectAll}
                       className="w-4 h-4 rounded border-slate-600 bg-slate-800 accent-cyan-500"
                     />

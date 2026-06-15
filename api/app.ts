@@ -48,9 +48,11 @@ app.use(
 )
 
 app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error('Server error:', error.message, error.stack)
   res.status(500).json({
     success: false,
     message: 'Server internal error',
+    detail: error.message,
   })
 })
 

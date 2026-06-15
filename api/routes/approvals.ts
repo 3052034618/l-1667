@@ -53,15 +53,17 @@ router.post('/:taskId/submit', requireRole(['phd_student', 'supervisor', 'chief_
   const approverId = req.user.userId;
 
   if (userRole === 'phd_student' && type !== 'phd') {
-    res.status(200).json({
+    res.status(403).json({
       success: false,
+      code: 'PERMISSION_DENIED',
       message: '博士生只能审批phd类型的审批',
     });
     return;
   }
   if (userRole === 'supervisor' && type !== 'supervisor') {
-    res.status(200).json({
+    res.status(403).json({
       success: false,
+      code: 'PERMISSION_DENIED',
       message: '导师只能审批supervisor类型的审批',
     });
     return;
@@ -71,10 +73,30 @@ router.post('/:taskId/submit', requireRole(['phd_student', 'supervisor', 'chief_
   if (!task) {
     res.status(200).json({
       success: false,
+      code: 'NOT_FOUND',
       message: '任务不存在',
     });
     return;
   }
+
+  if (type === 'phd' && task.status !== 'pending_phd_approval') {
+    res.status(403).json({
+      success: false,
+      code: 'FLOW_VIOLATION',
+      message: `该任务当前状态为「${task.status}」，不可执行博士生审批，需先到达「待博士生审批」阶段`,
+    });
+    return;
+  }
+
+  if (type === 'supervisor' && task.status !== 'pending_supervisor_approval') {
+    res.status(403).json({
+      success: false,
+      code: 'FLOW_VIOLATION',
+      message: `该任务当前状态为「${task.status}」，不可执行导师审批，需先通过博士生自审`,
+    });
+    return;
+  }
+
   const approver = mockUsers.find((u) => u.id === approverId) || mockUsers[1];
   const newApproval: ApprovalRecord = {
     id: 'app-' + (mockApprovals.length + 1),
@@ -119,28 +141,37 @@ router.post('/batch', requireRole(['phd_student', 'supervisor', 'chief_scientist
   if (items && Array.isArray(items)) {
     items.forEach((item: any) => {
       const task = mockTasks.find((t) => t.id === item.taskId);
-      if (task) {
-        const approvalType = task.status === 'pending_phd_approval' ? 'phd' : 'supervisor';
-
-        if (userRole === 'phd_student' && approvalType !== 'phd') {
-          results.push({ taskId: item.taskId, success: false, message: '博士生只能审批phd类型的审批' });
-          return;
-        }
-        if (userRole === 'supervisor' && approvalType !== 'supervisor') {
-          results.push({ taskId: item.taskId, success: false, message: '导师只能审批supervisor类型的审批' });
-          return;
-        }
-
-        if (decision === 'approved') {
-          if (task.status === 'pending_phd_approval') {
-            task.status = 'pending_supervisor_approval';
-          } else {
-            task.status = 'completed';
-            task.progress = 100;
-          }
-        }
-        results.push({ taskId: item.taskId, success: true });
+      if (!task) {
+        results.push({ taskId: item.taskId, success: false, code: 'NOT_FOUND', message: '任务不存在' });
+        return;
       }
+
+      const approvalType = task.status === 'pending_phd_approval' ? 'phd'
+        : task.status === 'pending_supervisor_approval' ? 'supervisor' : null;
+
+      if (userRole === 'phd_student' && approvalType !== 'phd') {
+        results.push({ taskId: item.taskId, success: false, code: 'PERMISSION_DENIED', message: '博士生只能审批phd类型的审批' });
+        return;
+      }
+      if (userRole === 'supervisor' && approvalType !== 'supervisor') {
+        results.push({ taskId: item.taskId, success: false, code: 'PERMISSION_DENIED', message: '导师只能审批supervisor类型的审批' });
+        return;
+      }
+
+      if (!approvalType) {
+        results.push({ taskId: item.taskId, success: false, code: 'FLOW_VIOLATION', message: `该任务当前状态为「${task.status}」，不可执行审批操作` });
+        return;
+      }
+
+      if (decision === 'approved') {
+        if (task.status === 'pending_phd_approval') {
+          task.status = 'pending_supervisor_approval';
+        } else {
+          task.status = 'completed';
+          task.progress = 100;
+        }
+      }
+      results.push({ taskId: item.taskId, success: true });
     });
   }
   res.status(200).json({
