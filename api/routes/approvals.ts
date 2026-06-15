@@ -1,11 +1,17 @@
 import { Router, type Request, type Response } from 'express';
 import { mockApprovals, mockTasks, mockUsers, type ApprovalRecord } from '../data/mockData.js';
+import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
 router.get('/pending', (req: Request, res: Response): void => {
   const approvalType = req.query.approvalType as string;
+  const userRole = req.user.role;
+
   let pendingTasks = mockTasks.filter((t) => {
+    if (userRole === 'phd_student') {
+      return t.status === 'pending_phd_approval';
+    }
     if (approvalType === 'phd') {
       return t.status === 'pending_phd_approval';
     }
@@ -40,9 +46,27 @@ router.get('/history', (req: Request, res: Response): void => {
   });
 });
 
-router.post('/:taskId/submit', (req: Request, res: Response): void => {
+router.post('/:taskId/submit', requireRole(['phd_student', 'supervisor', 'chief_scientist', 'admin']), (req: Request, res: Response): void => {
   const { taskId } = req.params;
-  const { type, decision, comments, approverId } = req.body;
+  const { type, decision, comments } = req.body;
+  const userRole = req.user.role;
+  const approverId = req.user.userId;
+
+  if (userRole === 'phd_student' && type !== 'phd') {
+    res.status(200).json({
+      success: false,
+      message: '博士生只能审批phd类型的审批',
+    });
+    return;
+  }
+  if (userRole === 'supervisor' && type !== 'supervisor') {
+    res.status(200).json({
+      success: false,
+      message: '导师只能审批supervisor类型的审批',
+    });
+    return;
+  }
+
   const task = mockTasks.find((t) => t.id === taskId);
   if (!task) {
     res.status(200).json({
@@ -87,13 +111,26 @@ router.post('/:taskId/submit', (req: Request, res: Response): void => {
   });
 });
 
-router.post('/batch', (req: Request, res: Response): void => {
+router.post('/batch', requireRole(['phd_student', 'supervisor', 'chief_scientist', 'admin']), (req: Request, res: Response): void => {
   const { items, decision, comments } = req.body;
+  const userRole = req.user.role;
   const results: any[] = [];
+
   if (items && Array.isArray(items)) {
     items.forEach((item: any) => {
       const task = mockTasks.find((t) => t.id === item.taskId);
       if (task) {
+        const approvalType = task.status === 'pending_phd_approval' ? 'phd' : 'supervisor';
+
+        if (userRole === 'phd_student' && approvalType !== 'phd') {
+          results.push({ taskId: item.taskId, success: false, message: '博士生只能审批phd类型的审批' });
+          return;
+        }
+        if (userRole === 'supervisor' && approvalType !== 'supervisor') {
+          results.push({ taskId: item.taskId, success: false, message: '导师只能审批supervisor类型的审批' });
+          return;
+        }
+
         if (decision === 'approved') {
           if (task.status === 'pending_phd_approval') {
             task.status = 'pending_supervisor_approval';

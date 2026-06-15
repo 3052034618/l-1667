@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { mockUsers } from '../data/mockData.js';
+import { verifyToken } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -27,15 +28,13 @@ router.post('/login', (req: Request, res: Response): void => {
     });
     return;
   }
-  const accessToken = 'mock_access_token_' + Date.now();
-  const refreshToken = 'mock_refresh_token_' + Date.now();
+  const accessToken = `tpf_${Date.now()}_${account.userId}`;
   res.status(200).json({
     success: true,
     message: '登录成功',
     data: {
       user,
       accessToken,
-      refreshToken,
     },
   });
 });
@@ -61,13 +60,13 @@ router.post('/register', (req: Request, res: Response): void => {
     lastLoginAt: new Date().toISOString(),
   };
   mockUsers.push(newUser);
+  const accessToken = `tpf_${Date.now()}_${newUser.id}`;
   res.status(200).json({
     success: true,
     message: '注册成功',
     data: {
       user: newUser,
-      accessToken: 'mock_access_token_' + Date.now(),
-      refreshToken: 'mock_refresh_token_' + Date.now(),
+      accessToken,
     },
   });
 });
@@ -79,19 +78,8 @@ router.post('/logout', (req: Request, res: Response): void => {
   });
 });
 
-router.get('/me', (req: Request, res: Response): void => {
-  const authHeader = req.headers.authorization;
-  let userId = 'user-1';
-  if (authHeader) {
-    if (authHeader.includes('user-2') || authHeader.includes('wangsupervisor')) {
-      userId = 'user-2';
-    } else if (authHeader.includes('user-3') || authHeader.includes('chenchief')) {
-      userId = 'user-3';
-    } else if (authHeader.includes('user-4') || authHeader.includes('admin01')) {
-      userId = 'user-4';
-    }
-  }
-  const user = mockUsers.find((u) => u.id === userId) || mockUsers[0];
+router.get('/me', verifyToken, (req: Request, res: Response): void => {
+  const user = mockUsers.find((u) => u.id === req.user.userId) || mockUsers[0];
   res.status(200).json({
     success: true,
     message: '获取用户信息成功',

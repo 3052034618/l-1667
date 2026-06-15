@@ -1,0 +1,20 @@
+data_Bi2Se3
+_chemical_name_common 'Bismuth Selenide'
+_cell_length_a 4.140
+_cell_length_b 4.140
+_cell_length_c 28.640
+_cell_angle_alpha 90.0
+_cell_angle_beta 90.0
+_cell_angle_gamma 120.0
+_space_group_name_H-M 'R-3m'
+loop_
+ _atom_site_label
+ _atom_site_fract_x
+ _atom_site_fract_y
+ _atom_site_fract_z
+ _atom_site_occupancy
+ Bi 0.400 0.400 0.400 1.0
+ Bi 0.600 0.600 0.600 1.0
+ Se 0.000 0.000 0.000 1.0
+ Se 0.000 0.000 0.500 1.0
+ Se 0.500 0.500 0.250 1.0

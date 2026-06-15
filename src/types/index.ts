@@ -140,6 +140,7 @@ export interface ComputationTask {
   convergenceLogs: ConvergenceLog[];
   topologyResult?: TopologyResult;
   approvals: ApprovalRecord[];
+  materials?: Array<MaterialArchive & { isArchived?: boolean }>;
   progress: number;
   currentStep: string;
   estimatedTimeRemaining: string;
@@ -168,6 +169,7 @@ export interface MaterialArchive {
   createdAt: string;
   citations: number;
   isVerified: boolean;
+  isArchived?: boolean;
 }
 
 export interface DailyStats {
@@ -224,4 +226,33 @@ export interface TaskFilters {
   dateFrom?: string;
   dateTo?: string;
   tags?: string[];
+}
+
+export type ExportFormat = 'pdf' | 'csv' | 'json' | 'vaspkit';
+
+export interface ExportHistoryItem {
+  id: string;
+  type: ExportFormat;
+  taskIds: string[];
+  createdAt: string;
+  downloadUrl: string;
+  filename: string;
+  size: string;
+}
+
+export interface ReportGenerateOptions {
+  includeCover?: boolean;
+  includeBandStructure?: boolean;
+  includeDOS?: boolean;
+  includeTopologyAnalysis?: boolean;
+  includeConvergence?: boolean;
+}
+
+export interface ExportFilters {
+  system?: string;
+  spaceGroup?: string;
+  gapType?: string;
+  topologyClass?: string;
+  dateFrom?: string;
+  dateTo?: string;
 }

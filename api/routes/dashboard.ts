@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { mockDashboardStats, mockTasks, mockMaterials } from '../data/mockData.js';
+import { requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -48,7 +49,7 @@ router.get('/trends', (req: Request, res: Response): void => {
   });
 });
 
-router.get('/distribution', (req: Request, res: Response): void => {
+router.get('/distribution', requireRole(['chief_scientist', 'admin']), (req: Request, res: Response): void => {
   const statuses = [
     'pending_validation',
     'structure_optimization',

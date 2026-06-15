@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Search, RotateCcw, Database, Layers, ChevronDown, ChevronUp, Quote, Calendar } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
+import { useTaskStore } from '../store/taskStore';
 import { mockMaterials } from '../data/mockData';
 import { cn, formatDate } from '../lib/utils';
 import type { MaterialArchive } from '../types';
@@ -34,19 +35,32 @@ export default function Materials() {
   const [bandGapRange, setBandGapRange] = useState<[number, number]>([0, 3]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const toggleTopology = (v: string) => {
-    setSelectedTopology((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]));
-  };
+  const getMaterials = useTaskStore((s) => s.getMaterials);
+  const loadTasksFromStorage = useTaskStore((s) => s.loadTasksFromStorage);
 
-  const resetFilters = () => {
-    setSearchText('');
-    setSpaceGroupRange([1, 230]);
-    setSelectedTopology([]);
-    setBandGapRange([0, 3]);
-  };
+  useEffect(() => {
+    loadTasksFromStorage();
+  }, [loadTasksFromStorage]);
+
+  const archivedMaterials = useMemo(() => {
+    const filters: { formula?: string; spaceGroup?: string; topologyClass?: string; bandGap?: [number, number] } = {};
+    if (searchText) filters.formula = searchText;
+    if (selectedTopology.length > 0) filters.topologyClass = selectedTopology.join('|');
+    filters.bandGap = bandGapRange;
+    return getMaterials(filters);
+  }, [getMaterials, searchText, selectedTopology, bandGapRange]);
+
+  const allMaterials = useMemo(() => {
+    const fromStore = getMaterials();
+    const storeIds = new Set(fromStore.map(m => m.id));
+    const uniqueMockMaterials = mockMaterials.filter(m => !storeIds.has(m.id));
+    return [...fromStore, ...uniqueMockMaterials].sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }, [getMaterials]);
 
   const filteredMaterials = useMemo(() => {
-    return mockMaterials.filter((m) => {
+    return allMaterials.filter((m) => {
       if (searchText && !m.formula.toLowerCase().includes(searchText.toLowerCase())) return false;
       const sgMatch = m.spaceGroup.match(/\((\d+)\)/);
       const sgNum = sgMatch ? parseInt(sgMatch[1]) : 0;
@@ -59,12 +73,12 @@ export default function Materials() {
       if (m.bandGap < bandGapRange[0] || m.bandGap > bandGapRange[1]) return false;
       return true;
     });
-  }, [searchText, spaceGroupRange, selectedTopology, bandGapRange]);
+  }, [allMaterials, searchText, spaceGroupRange, selectedTopology, bandGapRange]);
 
   const histogramData = useMemo(() => {
     const bins = [0, 0.2, 0.5, 0.8, 1.2, 1.6, 2.0, 2.5, 3.0];
     const counts = new Array(bins.length - 1).fill(0);
-    mockMaterials.forEach((m) => {
+    allMaterials.forEach((m) => {
       for (let i = 0; i < bins.length - 1; i++) {
         if (m.bandGap >= bins[i] && m.bandGap < bins[i + 1]) {
           counts[i]++;
@@ -73,9 +87,20 @@ export default function Materials() {
       }
     });
     return counts.map((c, i) => ({ range: `${bins[i]}-${bins[i + 1]}`, count: c }));
-  }, []);
+  }, [allMaterials]);
 
-  const strongCount = mockMaterials.filter((m) => getTopologyLabel(m.topologyClass).idx >= 2).length;
+  const strongCount = allMaterials.filter((m) => getTopologyLabel(m.topologyClass).idx >= 2).length;
+
+  const toggleTopology = (v: string) => {
+    setSelectedTopology((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v]));
+  };
+
+  const resetFilters = () => {
+    setSearchText('');
+    setSpaceGroupRange([1, 230]);
+    setSelectedTopology([]);
+    setBandGapRange([0, 3]);
+  };
 
   const handleCardClick = (m: MaterialArchive) => {
     alert(`材料详情: ${m.formula}\n拓扑分类: ${m.topologyClass}\nZ2不变量: ${m.z2Invariant}\n来源任务: ${m.sourceTaskId}`);
@@ -88,7 +113,7 @@ export default function Materials() {
           <Database className="w-7 h-7 text-primary" />
           材料数据库
         </h1>
-        <span className="text-sm text-slate-400">共 {filteredMaterials.length} / {mockMaterials.length} 条记录</span>
+        <span className="text-sm text-slate-400">共 {filteredMaterials.length} / {allMaterials.length} 条记录</span>
       </div>
 
       <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-700/50 backdrop-blur-sm">
@@ -172,14 +197,14 @@ export default function Materials() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-700/50 backdrop-blur-sm">
           <p className="text-sm text-slate-400 mb-2">材料总数</p>
-          <p className="text-3xl font-bold text-white">{mockMaterials.length}</p>
-          <p className="text-xs text-slate-500 mt-2">已验证 {mockMaterials.filter((m) => m.isVerified).length} 种</p>
+          <p className="text-3xl font-bold text-white">{allMaterials.length}</p>
+          <p className="text-xs text-slate-500 mt-2">已验证 {allMaterials.filter((m) => m.isVerified).length} 种</p>
         </div>
         <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-700/50 backdrop-blur-sm relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-glow-cyan opacity-40" />
           <p className="text-sm text-slate-400 mb-2 relative">强拓扑材料数</p>
           <p className="text-3xl font-bold text-primary relative">{strongCount}</p>
-          <p className="text-xs text-slate-500 mt-2 relative">占比 {((strongCount / mockMaterials.length) * 100).toFixed(1)}%</p>
+          <p className="text-xs text-slate-500 mt-2 relative">占比 {((strongCount / allMaterials.length) * 100).toFixed(1)}%</p>
         </div>
         <div className="p-5 rounded-xl bg-slate-900/60 border border-slate-700/50 backdrop-blur-sm">
           <p className="text-sm text-slate-400 mb-2">带隙分布直方图</p>

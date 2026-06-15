@@ -14,6 +14,7 @@ import approvalRoutes from './routes/approvals.js'
 import notificationRoutes from './routes/notifications.js'
 import dashboardRoutes from './routes/dashboard.js'
 import reportRoutes from './routes/reports.js'
+import userRoutes from './routes/users.js'
 import { verifyToken } from './middleware/auth.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -34,6 +35,7 @@ app.use('/api/approvals', verifyToken, approvalRoutes)
 app.use('/api/notifications', verifyToken, notificationRoutes)
 app.use('/api/dashboard', verifyToken, dashboardRoutes)
 app.use('/api/reports', verifyToken, reportRoutes)
+app.use('/api/users', verifyToken, userRoutes)
 
 app.use(
   '/api/health',

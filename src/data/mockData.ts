@@ -314,6 +314,11 @@ export const mockApprovals: ApprovalRecord[] = [
   generateApproval('app-1', 'task-1', 'phd', 'approved'),
   generateApproval('app-2', 'task-1', 'supervisor', 'approved'),
   generateApproval('app-3', 'task-3', 'phd', 'approved'),
+  generateApproval('app-4', 'task-2', 'phd', 'approved'),
+  generateApproval('app-5', 'task-2', 'supervisor', 'approved'),
+  generateApproval('app-6', 'task-15', 'phd', 'approved'),
+  generateApproval('app-7', 'task-15', 'supervisor', 'approved'),
+  generateApproval('app-8', 'task-21', 'phd', 'approved'),
 ];
 
 function createTask(
@@ -368,9 +373,113 @@ function createTask(
   }
   if (id === 'task-1') {
     base.approvals = [mockApprovals[0], mockApprovals[1]];
+    base.materials = [{
+      id: 'mat-task-1',
+      formula: 'Bi2Se3',
+      classification: 'V-VI族化合物',
+      topologyClass: 'TI (3D)',
+      bandGap: 0.3,
+      z2Invariant: 1,
+      spaceGroup: 'R-3m (166)',
+      sourceTaskId: 'task-1',
+      archivedBy: 'user-2',
+      archivedByName: '王建国',
+      cifFileUrl: '/cif/Bi2Se3.cif',
+      bandStructureData: base.topologyResult?.bandStructureData || [],
+      dosData: base.topologyResult?.dosData || [],
+      createdAt: base.completedAt || new Date().toISOString(),
+      citations: 0,
+      isVerified: true,
+      isArchived: true,
+    }];
+  }
+  if (id === 'task-2') {
+    base.approvals = [mockApprovals[3], mockApprovals[4]];
+    base.materials = [{
+      id: 'mat-task-2',
+      formula: 'Na3Bi',
+      classification: 'I-V族化合物',
+      topologyClass: 'Dirac semimetal',
+      bandGap: 0.0,
+      z2Invariant: '(1;000)',
+      spaceGroup: 'P63/mmc (194)',
+      sourceTaskId: 'task-2',
+      archivedBy: 'user-2',
+      archivedByName: '王建国',
+      cifFileUrl: '/cif/Na3Bi.cif',
+      bandStructureData: base.topologyResult?.bandStructureData || [],
+      dosData: base.topologyResult?.dosData || [],
+      createdAt: base.completedAt || new Date().toISOString(),
+      citations: 0,
+      isVerified: true,
+      isArchived: true,
+    }];
   }
   if (id === 'task-3') {
     base.approvals = [mockApprovals[2]];
+    base.materials = [{
+      id: 'mat-task-3',
+      formula: 'Cd3As2',
+      classification: 'II-V族化合物',
+      topologyClass: 'Dirac semimetal',
+      bandGap: 0.0,
+      z2Invariant: 'Dirac semimetal',
+      spaceGroup: 'I41/acd (142)',
+      sourceTaskId: 'task-3',
+      archivedBy: 'user-1',
+      archivedByName: '刘小明',
+      cifFileUrl: '/cif/Cd3As2.cif',
+      bandStructureData: base.topologyResult?.bandStructureData || [],
+      dosData: base.topologyResult?.dosData || [],
+      createdAt: new Date().toISOString(),
+      citations: 0,
+      isVerified: false,
+      isArchived: false,
+    }];
+  }
+  if (id === 'task-15') {
+    base.approvals = [mockApprovals[5], mockApprovals[6]];
+    base.materials = [{
+      id: 'mat-task-15',
+      formula: 'KZnBi',
+      classification: 'I-II-V赫斯勒',
+      topologyClass: 'TI',
+      bandGap: 0.15,
+      z2Invariant: 0,
+      spaceGroup: 'F-43m (216)',
+      sourceTaskId: 'task-15',
+      archivedBy: 'user-2',
+      archivedByName: '王建国',
+      cifFileUrl: '/cif/KZnBi.cif',
+      bandStructureData: base.topologyResult?.bandStructureData || [],
+      dosData: base.topologyResult?.dosData || [],
+      createdAt: base.completedAt || new Date().toISOString(),
+      citations: 0,
+      isVerified: true,
+      isArchived: true,
+    }];
+  }
+  if (id === 'task-21') {
+    base.approvals = [mockApprovals[7]];
+    base.materials = [{
+      id: 'mat-task-21',
+      formula: 'Bi4Br4',
+      classification: 'V-VII族化合物',
+      topologyClass: 'Weak Topological Insulator',
+      bandGap: 0.18,
+      z2Invariant: '0; (111)',
+      spaceGroup: 'C2/m (12)',
+      sourceTaskId: 'task-21',
+      archivedBy: 'user-1',
+      archivedByName: '刘小明',
+      cifFileUrl: '/cif/Bi4Br4.cif',
+      bandStructureData: base.topologyResult?.bandStructureData || [],
+      dosData: base.topologyResult?.dosData || [],
+      createdAt: new Date().toISOString(),
+      citations: 0,
+      isVerified: true,
+      isArchived: false,
+    }];
   }
   return base;
 }

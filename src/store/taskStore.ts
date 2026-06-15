@@ -8,14 +8,19 @@ import type {
   ApprovalDecision,
   CrystalStructure,
   CalculationParams,
+  MaterialArchive,
+  TopologyResult,
 } from '../types';
 import { mockTasks, mockApprovals } from '../data/mockData';
+
+const STORAGE_KEY = 'topoflow_tasks';
 
 interface TaskState {
   tasks: ComputationTask[];
   currentTask: ComputationTask | null;
   filters: TaskFilters;
   approvals: ApprovalRecord[];
+  materials: MaterialArchive[];
   getTasks: () => ComputationTask[];
   getTaskById: (id: string) => ComputationTask | undefined;
   createTask: (data: {
@@ -38,17 +43,88 @@ interface TaskState {
     approverId: string,
     approverName: string
   ) => ApprovalRecord | null;
+  batchSubmitApproval: (
+    taskIds: string[],
+    type: ApprovalType,
+    decision: ApprovalDecision,
+    comments: string,
+    approverId: string,
+    approverName: string
+  ) => number;
+  getMaterials: (filters?: {
+    formula?: string;
+    spaceGroup?: string;
+    topologyClass?: string;
+    bandGap?: [number, number];
+  }) => MaterialArchive[];
   setFilters: (filters: TaskFilters) => void;
   setCurrentTask: (task: ComputationTask | null) => void;
   getFilteredTasks: () => ComputationTask[];
   updateTaskProgress: (id: string, progress: number, currentStep: string) => void;
+  loadTasksFromStorage: () => void;
+  saveTasksToStorage: () => void;
+  deleteTask: (id: string) => void;
+}
+
+const emptyTopologyResult: TopologyResult = {
+  bandInversion: false,
+  z2Invariant: 0,
+  topologyClass: '未定',
+  surfaceStates: [],
+  bandGap: 0,
+  fermiLevel: 0,
+  bandStructureData: [],
+  dosData: [],
+};
+
+function taskToMaterial(task: ComputationTask, approverId: string, approverName: string): MaterialArchive {
+  const topology = task.topologyResult || emptyTopologyResult;
+  return {
+    id: `mat-${task.id}`,
+    formula: task.formula,
+    classification: task.tags[0] || '未分类',
+    topologyClass: topology.topologyClass,
+    bandGap: topology.bandGap,
+    z2Invariant: topology.z2Invariant,
+    spaceGroup: `${task.crystalStructure.spaceGroup} (${task.crystalStructure.spaceGroupNumber})`,
+    sourceTaskId: task.id,
+    archivedBy: approverId,
+    archivedByName: approverName,
+    cifFileUrl: `/cif/${task.formula}.cif`,
+    bandStructureData: topology.bandStructureData,
+    dosData: topology.dosData,
+    createdAt: new Date().toISOString(),
+    citations: 0,
+    isVerified: false,
+  };
 }
 
 export const useTaskStore = create<TaskState>((set, get) => ({
-  tasks: [...mockTasks],
+  tasks: [],
   currentTask: null,
   filters: {},
   approvals: [...mockApprovals],
+  materials: [],
+
+  loadTasksFromStorage: () => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      const storedTasks: ComputationTask[] = stored ? JSON.parse(stored) : [];
+      const storedIds = new Set(storedTasks.map(t => t.id));
+      const uniqueMockTasks = mockTasks.filter(t => !storedIds.has(t.id));
+      set({ tasks: [...storedTasks, ...uniqueMockTasks] });
+    } catch {
+      set({ tasks: [...mockTasks] });
+    }
+  },
+
+  saveTasksToStorage: () => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(get().tasks));
+    } catch {
+      console.error('Failed to save tasks to localStorage');
+    }
+  },
 
   getTasks: () => get().tasks,
 
@@ -69,6 +145,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       crystalStructure: data.crystalStructure,
       calculationParams: data.calculationParams,
       convergenceLogs: [],
+      topologyResult: { ...emptyTopologyResult },
       approvals: [],
       progress: 0,
       currentStep: '任务已创建，等待验证',
@@ -79,6 +156,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     set((state) => ({
       tasks: [newTask, ...state.tasks],
     }));
+    get().saveTasksToStorage();
     return newTask;
   },
 
@@ -126,10 +204,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         return updated;
       }),
     }));
+    get().saveTasksToStorage();
   },
 
   submitApproval: (taskId, type, decision, comments, approverId, approverName) => {
-    const approvalId = `app-${Date.now()}`;
+    const approvalId = `app-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const now = new Date().toISOString();
     const approval: ApprovalRecord = {
       id: approvalId,
@@ -141,31 +220,97 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       comments,
       createdAt: now,
     };
+
+    let newMaterial: MaterialArchive | null = null;
+
     set((state) => {
       const taskExists = state.tasks.some((t) => t.id === taskId);
       if (!taskExists) return state;
+
       const newState: Partial<TaskState> = {
         approvals: [...state.approvals, approval],
       };
+
       newState.tasks = state.tasks.map((t) => {
         if (t.id !== taskId) return t;
         const updatedTask = { ...t, approvals: [...t.approvals, approval] };
+
         if (decision === 'approved') {
           if (type === 'phd') {
             updatedTask.status = 'pending_supervisor_approval';
             updatedTask.currentStep = '等待导师审批';
+            (updatedTask as any).materials = [{
+              ...taskToMaterial(updatedTask, approverId, approverName),
+              isArchived: false,
+            }];
           } else if (type === 'supervisor') {
             updatedTask.status = 'completed';
             updatedTask.currentStep = '计算完成';
             updatedTask.progress = 100;
             updatedTask.completedAt = now;
+            const material = taskToMaterial(updatedTask, approverId, approverName);
+            (updatedTask as any).materials = [{ ...material, isArchived: true }];
+            newMaterial = { ...material, isArchived: true };
           }
+        } else if (decision === 'rejected') {
+          updatedTask.status = 'error_fallback';
+          updatedTask.currentStep = '审批驳回，等待处理';
         }
+
         return updatedTask;
       });
+
+      if (newMaterial) {
+        newState.materials = [newMaterial, ...state.materials];
+      }
+
       return newState;
     });
+
+    get().saveTasksToStorage();
     return approval;
+  },
+
+  batchSubmitApproval: (taskIds, type, decision, comments, approverId, approverName) => {
+    let successCount = 0;
+    taskIds.forEach((taskId) => {
+      const result = get().submitApproval(taskId, type, decision, comments, approverId, approverName);
+      if (result) successCount++;
+    });
+    return successCount;
+  },
+
+  getMaterials: (filters) => {
+    const { tasks } = get();
+    const completedTasks = tasks.filter((t) => {
+      if (t.status !== 'completed') return false;
+      const hasPhdApproval = t.approvals.some(a => a.type === 'phd' && a.decision === 'approved');
+      const hasSupervisorApproval = t.approvals.some(a => a.type === 'supervisor' && a.decision === 'approved');
+      return hasPhdApproval && hasSupervisorApproval;
+    });
+
+    let materials = completedTasks.map((t) => {
+      const supervisorApproval = t.approvals.find(a => a.type === 'supervisor' && a.decision === 'approved');
+      return taskToMaterial(t, supervisorApproval?.approverId || '', supervisorApproval?.approverName || '');
+    });
+
+    if (filters) {
+      if (filters.formula) {
+        materials = materials.filter(m => m.formula.toLowerCase().includes(filters.formula!.toLowerCase()));
+      }
+      if (filters.spaceGroup) {
+        materials = materials.filter(m => m.spaceGroup.toLowerCase().includes(filters.spaceGroup!.toLowerCase()));
+      }
+      if (filters.topologyClass) {
+        materials = materials.filter(m => m.topologyClass.toLowerCase().includes(filters.topologyClass!.toLowerCase()));
+      }
+      if (filters.bandGap) {
+        const [min, max] = filters.bandGap;
+        materials = materials.filter(m => m.bandGap >= min && m.bandGap <= max);
+      }
+    }
+
+    return materials.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
   setFilters: (filters) => set({ filters }),
@@ -200,5 +345,15 @@ export const useTaskStore = create<TaskState>((set, get) => ({
           : t
       ),
     }));
+    get().saveTasksToStorage();
+  },
+
+  deleteTask: (id) => {
+    set((state) => ({
+      tasks: state.tasks.filter((t) => t.id !== id),
+    }));
+    get().saveTasksToStorage();
   },
 }));
+
+useTaskStore.getState().loadTasksFromStorage();

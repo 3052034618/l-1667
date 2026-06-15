@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { ClipboardCheck, CheckCircle, XCircle, Eye, ChevronDown, ChevronUp, Clock, UserCheck, CalendarDays } from 'lucide-react';
-import { mockTasks, mockUsers } from '../data/mockData';
+import { useTaskStore } from '../store/taskStore';
+import { useAuthStore } from '../store/authStore';
 import { cn, formatDate, getStatusColor, getStatusText } from '../lib/utils';
 import type { ComputationTask } from '../types';
 
@@ -11,24 +12,35 @@ export default function Approvals() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [comments, setComments] = useState<Record<string, string>>({});
+  
+  const { user } = useAuthStore();
+  const tasks = useTaskStore((s) => s.getTasks());
+  const submitApproval = useTaskStore((s) => s.submitApproval);
+  const batchSubmitApproval = useTaskStore((s) => s.batchSubmitApproval);
+  const loadTasksFromStorage = useTaskStore((s) => s.loadTasksFromStorage);
 
-  const phdPending = mockTasks.filter((t) => t.status === 'pending_phd_approval');
-  const supervisorPending = mockTasks.filter((t) => t.status === 'pending_supervisor_approval');
-  const allPending = [...phdPending, ...supervisorPending];
+  useEffect(() => {
+    loadTasksFromStorage();
+  }, [loadTasksFromStorage]);
 
-  const approvedThisWeek = mockTasks.filter((t) => {
+  const phdPending = useMemo(() => tasks.filter((t) => t.status === 'pending_phd_approval'), [tasks]);
+  const supervisorPending = useMemo(() => tasks.filter((t) => t.status === 'pending_supervisor_approval'), [tasks]);
+  const allPending = useMemo(() => [...phdPending, ...supervisorPending], [phdPending, supervisorPending]);
+
+  const approvedThisWeek = useMemo(() => tasks.filter((t) => {
     if (!t.completedAt) return false;
     const d = new Date(t.completedAt);
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 86400000);
     return d >= weekAgo && (t.status === 'completed');
-  });
-  const approvedThisMonth = mockTasks.filter((t) => {
+  }), [tasks]);
+
+  const approvedThisMonth = useMemo(() => tasks.filter((t) => {
     if (!t.completedAt) return false;
     const d = new Date(t.completedAt);
     const now = new Date();
     return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.status === 'completed';
-  });
+  }), [tasks]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -50,31 +62,81 @@ export default function Approvals() {
   };
 
   const handleApprove = (id: string) => {
+    if (!user) return;
     const task = allPending.find((t) => t.id === id);
-    alert(`审批通过: ${task?.formula}\n意见: ${comments[id] || '无'}`);
+    if (!task) return;
+    
+    const approvalType = user.role === 'phd_student' ? 'phd' : 'supervisor';
+    submitApproval(id, approvalType, 'approved', comments[id] || '', user.id, user.realName);
+    
+    setComments((prev) => {
+      const newComments = { ...prev };
+      delete newComments[id];
+      return newComments;
+    });
+    setSelectedIds((prev) => prev.filter((x) => x !== id));
+    setExpandedId(null);
   };
 
   const handleReject = (id: string) => {
+    if (!user) return;
     const task = allPending.find((t) => t.id === id);
-    alert(`驳回: ${task?.formula}\n意见: ${comments[id] || '无'}`);
+    if (!task) return;
+    
+    const approvalType = user.role === 'phd_student' ? 'phd' : 'supervisor';
+    submitApproval(id, approvalType, 'rejected', comments[id] || '', user.id, user.realName);
+    
+    setComments((prev) => {
+      const newComments = { ...prev };
+      delete newComments[id];
+      return newComments;
+    });
+    setSelectedIds((prev) => prev.filter((x) => x !== id));
+    setExpandedId(null);
   };
 
   const handleBatchApprove = () => {
-    if (selectedIds.length === 0) return;
-    alert(`批量通过 ${selectedIds.length} 个审批`);
+    if (!user || selectedIds.length === 0) return;
+    
+    const approvalType = user.role === 'phd_student' ? 'phd' : 'supervisor';
+    const selectedTasks = tasks.filter((t) => selectedIds.includes(t.id));
+    const phdTasks = selectedTasks.filter((t) => t.status === 'pending_phd_approval').map((t) => t.id);
+    const supervisorTasks = selectedTasks.filter((t) => t.status === 'pending_supervisor_approval').map((t) => t.id);
+    
+    if (phdTasks.length > 0 && approvalType === 'phd') {
+      batchSubmitApproval(phdTasks, 'phd', 'approved', '', user.id, user.realName);
+    }
+    if (supervisorTasks.length > 0 && approvalType === 'supervisor') {
+      batchSubmitApproval(supervisorTasks, 'supervisor', 'approved', '', user.id, user.realName);
+    }
+    
     setSelectedIds([]);
+    setComments({});
   };
 
   const handleBatchReject = () => {
-    if (selectedIds.length === 0) return;
-    alert(`批量驳回 ${selectedIds.length} 个审批`);
+    if (!user || selectedIds.length === 0) return;
+    
+    const approvalType = user.role === 'phd_student' ? 'phd' : 'supervisor';
+    const selectedTasks = tasks.filter((t) => selectedIds.includes(t.id));
+    const phdTasks = selectedTasks.filter((t) => t.status === 'pending_phd_approval').map((t) => t.id);
+    const supervisorTasks = selectedTasks.filter((t) => t.status === 'pending_supervisor_approval').map((t) => t.id);
+    
+    if (phdTasks.length > 0 && approvalType === 'phd') {
+      batchSubmitApproval(phdTasks, 'phd', 'rejected', '', user.id, user.realName);
+    }
+    if (supervisorTasks.length > 0 && approvalType === 'supervisor') {
+      batchSubmitApproval(supervisorTasks, 'supervisor', 'rejected', '', user.id, user.realName);
+    }
+    
     setSelectedIds([]);
+    setComments({});
   };
 
   const displayTasks = useMemo(() => {
     if (activeTab === 'pending') return allPending;
-    return mockTasks.filter((t) => t.status === 'completed').slice(0, 8);
-  }, [activeTab]);
+    return tasks.filter((t) => t.status === 'completed').slice(0, 8);
+  }, [activeTab, allPending, tasks]);
 
   return (
     <div className="space-y-6">

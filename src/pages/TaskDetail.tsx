@@ -1,5 +1,5 @@
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   ArrowLeft, CheckCircle2, Clock, FlaskConical, Atom, Cpu, Network,
   ShieldCheck, UserCheck, Trophy, AlertTriangle, Info, ChevronRight,
@@ -59,13 +59,21 @@ function Section({ title, subtitle, icon: Icon, children }: {
 export default function TaskDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const task = useTaskStore((s) => s.getTaskById(id || ''));
+  const getTaskById = useTaskStore((s) => s.getTaskById);
   const submitApproval = useTaskStore((s) => s.submitApproval);
+  const loadTasksFromStorage = useTaskStore((s) => s.loadTasksFromStorage);
   const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState<TabId>('structure');
   const [phdChecks, setPhdChecks] = useState({ convergence: false, symmetry: false });
   const [supervisorCheck, setSupervisorCheck] = useState(false);
   const [comment, setComment] = useState('');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    loadTasksFromStorage();
+  }, [loadTasksFromStorage]);
+
+  const task = useMemo(() => getTaskById(id || ''), [id, getTaskById, refreshKey]);
 
   if (!task) {
     return (
@@ -93,6 +101,7 @@ export default function TaskDetail() {
     setComment('');
     setPhdChecks({ convergence: false, symmetry: false });
     setSupervisorCheck(false);
+    setRefreshKey(prev => prev + 1);
   };
 
   const crystalSystem = useMemo(() => {
@@ -713,48 +722,52 @@ export default function TaskDetail() {
             <div className="lg:col-span-3">
               <Section title="审批历史" icon={BookOpen} subtitle={`${approvals.length} 条记录`}>
                 <div className="rounded-2xl bg-slate-900/60 border border-slate-700/50 backdrop-blur-sm p-5 max-h-[520px] overflow-y-auto">
-                  {(approvals.length > 0 ? approvals : [
-                    { id: 'demo-1', type: 'phd', approverName: '刘小明', decision: 'approved', comments: 'SCF已充分收敛，结构保持R-3m对称性，符合理论预期。', createdAt: new Date(Date.now() - 86400000 * 2).toISOString() },
-                    { id: 'demo-2', type: 'supervisor', approverName: '王建国', decision: 'approved', comments: '能带反转分析合理，Z₂(1;100)分类为强拓扑绝缘体，同意归档。', createdAt: new Date(Date.now() - 86400000).toISOString() },
-                  ] as any[]).map((ap: any, i) => (
-                    <div key={ap.id || i} className="flex gap-3 last:mb-0 mb-4">
-                      <div className="flex flex-col items-center">
-                        <div className={cn(
-                          'w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border-2',
-                          ap.decision === 'approved' ? 'bg-success/20 border-success text-success' : 'bg-danger/20 border-danger text-danger'
-                        )}>
-                          {ap.approverName.charAt(0)}
-                        </div>
-                        {i < (approvals.length || 2) - 1 && <div className="flex-1 w-px bg-slate-700 mt-2" />}
-                      </div>
-                      <div className="flex-1 pb-4">
-                        <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-white">{ap.approverName}</span>
-                            <span className={cn(
-                              'text-xs px-2 py-0.5 rounded-md font-medium',
-                              ap.type === 'phd' ? 'bg-info/20 text-info' : 'bg-secondary/20 text-secondary'
-                            )}>
-                              {ap.type === 'phd' ? '博士生自审' : '导师审批'}
-                            </span>
-                            <span className={cn(
-                              'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md font-medium',
-                              ap.decision === 'approved' ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'
-                            )}>
-                              {ap.decision === 'approved' ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
-                              {ap.decision === 'approved' ? '通过' : '驳回'}
-                            </span>
+                  {approvals.length > 0 ? (
+                    approvals.map((ap, i) => (
+                      <div key={ap.id} className="flex gap-3 last:mb-0 mb-4">
+                        <div className="flex flex-col items-center">
+                          <div className={cn(
+                            'w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border-2',
+                            ap.decision === 'approved' ? 'bg-success/20 border-success text-success' : 'bg-danger/20 border-danger text-danger'
+                          )}>
+                            {ap.approverName.charAt(0)}
                           </div>
-                          <span className="text-xs text-slate-500">{formatDate(ap.createdAt)}</span>
+                          {i < approvals.length - 1 && <div className="flex-1 w-px bg-slate-700 mt-2" />}
                         </div>
-                        {ap.comments && (
-                          <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-700/30 text-sm text-slate-300">
-                            {ap.comments}
+                        <div className="flex-1 pb-4">
+                          <div className="flex items-start justify-between gap-3 flex-wrap mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-white">{ap.approverName}</span>
+                              <span className={cn(
+                                'text-xs px-2 py-0.5 rounded-md font-medium',
+                                ap.type === 'phd' ? 'bg-info/20 text-info' : 'bg-secondary/20 text-secondary'
+                              )}>
+                                {ap.type === 'phd' ? '博士生自审' : '导师审批'}
+                              </span>
+                              <span className={cn(
+                                'inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-md font-medium',
+                                ap.decision === 'approved' ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'
+                              )}>
+                                {ap.decision === 'approved' ? <CheckCircle2 className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
+                                {ap.decision === 'approved' ? '通过' : '驳回'}
+                              </span>
+                            </div>
+                            <span className="text-xs text-slate-500">{formatDate(ap.createdAt)}</span>
                           </div>
-                        )}
+                          {ap.comments && (
+                            <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-700/30 text-sm text-slate-300">
+                              {ap.comments}
+                            </div>
+                          )}
+                        </div>
                       </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-slate-500">
+                      <Info className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">暂无审批记录</p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </Section>
             </div>

@@ -51,8 +51,24 @@ export default function CreateTaskModal({ open, onClose, onSubmit }: CreateTaskM
   const [step, setStep] = useState<Step>(1);
   const [dragOver, setDragOver] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState('');
   const [title, setTitle] = useState('');
   const [formula, setFormula] = useState('');
+
+  const validateFile = (file: File): { valid: boolean; error: string } => {
+    const fileName = file.name;
+    const namePattern = /^POSCAR$/i;
+    const extPattern = /\.(cif|vasp|poscar)$/i;
+    const maxSize = 10 * 1024 * 1024;
+
+    if (!namePattern.test(fileName) && !extPattern.test(fileName)) {
+      return { valid: false, error: '仅支持 CIF、POSCAR 或 VASP 结构文件' };
+    }
+    if (file.size > maxSize) {
+      return { valid: false, error: '文件大小不能超过 10MB' };
+    }
+    return { valid: true, error: '' };
+  };
 
   const [functional, setFunctional] = useState('PBE');
   const [kpointA, setKpointA] = useState(12);
@@ -72,6 +88,7 @@ export default function CreateTaskModal({ open, onClose, onSubmit }: CreateTaskM
     if (!open) {
       setStep(1);
       setUploadedFile(null);
+      setFileError('');
       setTitle('');
       setFormula('');
     }
@@ -97,23 +114,12 @@ export default function CreateTaskModal({ open, onClose, onSubmit }: CreateTaskM
     const files = e.dataTransfer.files;
     if (files.length > 0) {
       const file = files[0];
-      const ext = file.name.split('.').pop()?.toLowerCase();
-      if (ext === 'cif' || ext === 'vasp' || ext === 'poscar' || file.name.toLowerCase() === 'poscar') {
-        setUploadedFile(file);
-        const nameWithoutExt = file.name.replace(/\.(cif|vasp|poscar)$/i, '');
-        if (!title) setTitle(nameWithoutExt + ' 第一性原理计算');
-        if (!formula) {
-          const m = nameWithoutExt.match(/([A-Z][a-z]?\d*)+/g);
-          if (m) setFormula(m.join(''));
-        }
+      const validation = validateFile(file);
+      if (!validation.valid) {
+        setFileError(validation.error);
+        return;
       }
-    }
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      const file = files[0];
+      setFileError('');
       setUploadedFile(file);
       const nameWithoutExt = file.name.replace(/\.(cif|vasp|poscar)$/i, '');
       if (!title) setTitle(nameWithoutExt + ' 第一性原理计算');
@@ -124,8 +130,28 @@ export default function CreateTaskModal({ open, onClose, onSubmit }: CreateTaskM
     }
   };
 
-  const canNextStep1 = uploadedFile !== null;
-  const canNextStep2 = true;
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      const validation = validateFile(file);
+      if (!validation.valid) {
+        setFileError(validation.error);
+        return;
+      }
+      setFileError('');
+      setUploadedFile(file);
+      const nameWithoutExt = file.name.replace(/\.(cif|vasp|poscar)$/i, '');
+      if (!title) setTitle(nameWithoutExt + ' 第一性原理计算');
+      if (!formula) {
+        const m = nameWithoutExt.match(/([A-Z][a-z]?\d*)+/g);
+        if (m) setFormula(m.join(''));
+      }
+    }
+  };
+
+  const canNextStep1 = uploadedFile !== null && fileError === '';
+  const canNextStep2 = fileError === '';
   const canSubmit = functional && kpointA > 0 && kpointB > 0 && kpointC > 0 && cutoffEnergy >= 300;
 
   const handleSubmit = () => {
@@ -240,15 +266,19 @@ export default function CreateTaskModal({ open, onClose, onSubmit }: CreateTaskM
                 onClick={() => fileInputRef.current?.click()}
                 className={cn(
                   'relative cursor-pointer rounded-xl border-2 border-dashed p-10 text-center transition-all duration-300',
-                  dragOver
-                    ? 'border-cyan-500/60 bg-cyan-500/10 shadow-glow-cyan'
-                    : 'border-slate-700/60 bg-slate-800/30 hover:border-cyan-500/40 hover:bg-slate-800/50'
+                  fileError
+                    ? 'border-red-500/60 bg-red-500/10'
+                    : uploadedFile
+                      ? 'border-emerald-500/60 bg-emerald-500/10'
+                      : dragOver
+                        ? 'border-cyan-500/60 bg-cyan-500/10 shadow-glow-cyan'
+                        : 'border-slate-700/60 bg-slate-800/30 hover:border-cyan-500/40 hover:bg-slate-800/50'
                 )}
               >
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept=".cif,.vasp,POSCAR,.poscar"
+                  accept=".cif,.vasp,.poscar,POSCAR"
                   className="hidden"
                   onChange={handleFileSelect}
                 />
@@ -272,6 +302,13 @@ export default function CreateTaskModal({ open, onClose, onSubmit }: CreateTaskM
                 </div>
               </div>
 
+              {fileError && (
+                <div className="flex items-center gap-2 text-red-400 text-sm">
+                  <XCircle className="w-4 h-4" />
+                  <span>{fileError}</span>
+                </div>
+              )}
+
               {uploadedFile && (
                 <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 flex items-center gap-4">
                   <div className="w-12 h-12 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
@@ -287,6 +324,7 @@ export default function CreateTaskModal({ open, onClose, onSubmit }: CreateTaskM
                     onClick={(e) => {
                       e.stopPropagation();
                       setUploadedFile(null);
+                      setFileError('');
                     }}
                     className="w-8 h-8 rounded-lg bg-slate-800/60 text-slate-400 hover:bg-red-500/10 hover:text-red-400 border border-slate-700/50 flex items-center justify-center transition-all"
                   >

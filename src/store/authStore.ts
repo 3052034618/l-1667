@@ -1,115 +1,57 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { User, UserRole } from '../types';
+import api from '../lib/axios';
 
 export type { UserRole };
 
+const TOKEN_KEY = 'topoflow_token';
+
 interface AuthState {
   user: User | null;
+  token: string | null;
   isAuthenticated: boolean;
   rememberMe: boolean;
-  login: (username: string, password: string, role: UserRole, remember?: boolean) => Promise<boolean>;
+  login: (username: string, password: string) => Promise<{ success: boolean; message: string }>;
   logout: () => void;
   setRememberMe: (value: boolean) => void;
   hasRole: (roles: UserRole[]) => boolean;
+  fetchCurrentUser: () => Promise<void>;
 }
-
-type TestAccount = {
-  username: string;
-  password: string;
-  role: UserRole;
-  userData: Omit<User, 'id' | 'createdAt' | 'lastLoginAt'>;
-};
-
-const TEST_ACCOUNTS: TestAccount[] = [
-  {
-    username: 'phd',
-    password: '123456',
-    role: 'phd_student',
-    userData: {
-      username: 'phd',
-      email: 'phd@topo.ac.cn',
-      realName: '张博士',
-      role: 'phd_student',
-      groupId: 'group-001',
-      avatar: '',
-    },
-  },
-  {
-    username: 'supervisor',
-    password: '123456',
-    role: 'supervisor',
-    userData: {
-      username: 'supervisor',
-      email: 'supervisor@topo.ac.cn',
-      realName: '李导师',
-      role: 'supervisor',
-      groupId: 'group-001',
-      avatar: '',
-    },
-  },
-  {
-    username: 'chief',
-    password: '123456',
-    role: 'chief_scientist',
-    userData: {
-      username: 'chief',
-      email: 'chief@topo.ac.cn',
-      realName: '王首席',
-      role: 'chief_scientist',
-      groupId: 'group-all',
-      avatar: '',
-    },
-  },
-  {
-    username: 'admin',
-    password: '123456',
-    role: 'admin',
-    userData: {
-      username: 'admin',
-      email: 'admin@topo.ac.cn',
-      realName: '赵管理员',
-      role: 'admin',
-      groupId: 'system',
-      avatar: '',
-    },
-  },
-];
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
+      token: null,
       isAuthenticated: false,
       rememberMe: false,
 
-      login: async (username, password, role, remember = false) => {
-        await new Promise((resolve) => setTimeout(resolve, 600));
+      login: async (username, password) => {
+        try {
+          const response = await api.post('/auth/login', { username, password });
+          const { success, message, data } = response.data;
 
-        const account = TEST_ACCOUNTS.find(
-          (a) => a.username === username && a.password === password && a.role === role
-        );
-
-        if (account) {
-          const now = new Date().toISOString();
-          const user: User = {
-            ...account.userData,
-            id: crypto.randomUUID(),
-            createdAt: now,
-            lastLoginAt: now,
-          };
-          set({
-            user,
-            isAuthenticated: true,
-            rememberMe: remember,
-          });
-          return true;
+          if (success && data) {
+            const { user, accessToken } = data;
+            localStorage.setItem(TOKEN_KEY, accessToken);
+            set({
+              user,
+              token: accessToken,
+              isAuthenticated: true,
+            });
+            return { success: true, message: message || '登录成功' };
+          }
+          return { success: false, message: message || '登录失败' };
+        } catch (error: any) {
+          const message = error.response?.data?.message || error.message || '登录失败，请稍后重试';
+          return { success: false, message };
         }
-        return false;
       },
 
       logout: () => {
-        set({ user: null, isAuthenticated: false });
+        localStorage.removeItem(TOKEN_KEY);
+        set({ user: null, token: null, isAuthenticated: false });
       },
 
       setRememberMe: (value) => set({ rememberMe: value }),
@@ -119,6 +61,28 @@ export const useAuthStore = create<AuthState>()(
         if (!user) return false;
         return roles.includes(user.role);
       },
+
+      fetchCurrentUser: async () => {
+        const token = localStorage.getItem(TOKEN_KEY);
+        if (!token) {
+          set({ isAuthenticated: false, user: null, token: null });
+          return;
+        }
+
+        try {
+          const response = await api.get('/auth/me');
+          const { success, data } = response.data;
+          if (success && data) {
+            set({ user: data, token, isAuthenticated: true });
+          } else {
+            localStorage.removeItem(TOKEN_KEY);
+            set({ isAuthenticated: false, user: null, token: null });
+          }
+        } catch {
+          localStorage.removeItem(TOKEN_KEY);
+          set({ isAuthenticated: false, user: null, token: null });
+        }
+      },
     }),
     {
       name: 'auth-storage',
@@ -127,9 +91,19 @@ export const useAuthStore = create<AuthState>()(
           ? {
               user: state.user,
               isAuthenticated: state.isAuthenticated,
+              token: state.token,
               rememberMe: state.rememberMe,
             }
           : { rememberMe: state.rememberMe },
     }
   )
 );
+
+const initAuth = () => {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    useAuthStore.getState().fetchCurrentUser();
+  }
+};
+
+initAuth();

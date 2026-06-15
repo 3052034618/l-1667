@@ -2,10 +2,12 @@ import { useState, useMemo } from 'react';
 import {
   FileText, Download, Filter, Calendar, ChevronRight, Check,
   FileJson, FileSpreadsheet, Database, History, Eye, Plus, Trash2,
-  Settings2, Layers, Grid3x3, Sparkles, Info
+  Settings2, Layers, Grid3x3, Sparkles, Info, Loader2, AlertCircle
 } from 'lucide-react';
-import { mockTasks, mockMaterials, mockUsers } from '../data/mockData';
+import { mockTasks, mockMaterials } from '../data/mockData';
 import { cn, formatDate } from '../lib/utils';
+import { useReportStore } from '../store/reportStore';
+import type { ExportFormat, ReportGenerateOptions, ExportFilters } from '../types';
 
 type ReportTabType = 'pdf' | 'export';
 
@@ -19,10 +21,10 @@ const exportFields = [
   { key: 'dos', label: '态密度 (DOS)', icon: Sparkles },
   { key: 'z2', label: 'Z₂ 拓扑不变量', icon: Info },
   { key: 'surface_states', label: '表面态谱', icon: Grid3x3 },
-  { key: 'convergence', label: '收敛日志', icon: Settings2 },
   { key: 'crystal', label: '晶体结构 (CIF)', icon: Database },
+  { key: 'convergence', label: '收敛日志', icon: Settings2 },
   { key: 'params', label: '计算参数', icon: Settings2 },
-  { key: 'topology', label: '拓扑分类结果', icon: Sparkles },
+  { key: 'approvals', label: '审批记录', icon: Check },
 ];
 
 const exportFormats = [
@@ -31,12 +33,12 @@ const exportFormats = [
   { key: 'vaspkit', label: 'VASPKIT', icon: Database, desc: 'VASPKIT 输入格式' },
 ];
 
-const exportHistory = [
-  { id: 'exp-1', name: 'Bi2Se3系列_全量数据', format: 'JSON', size: '2.4 MB', fields: 6, date: '2026-06-14 15:32', status: '完成' },
-  { id: 'exp-2', name: '狄拉克半金属汇总', format: 'CSV', size: '856 KB', fields: 4, date: '2026-06-12 10:18', status: '完成' },
-  { id: 'exp-3', name: '拓扑材料月度报告', format: 'VASPKIT', size: '5.8 MB', fields: 8, date: '2026-06-01 08:45', status: '完成' },
-  { id: 'exp-4', name: 'Weyl半金属专题', format: 'JSON', size: '3.2 MB', fields: 5, date: '2026-05-28 19:22', status: '已过期' },
-];
+const formatBadgeColors: Record<string, string> = {
+  pdf: 'bg-primary/15 text-primary',
+  csv: 'bg-success/15 text-success',
+  json: 'bg-secondary/15 text-secondary',
+  vaspkit: 'bg-warning/15 text-warning',
+};
 
 export default function Reports() {
   const [activeTab, setActiveTab] = useState<ReportTabType>('pdf');
@@ -46,20 +48,87 @@ export default function Reports() {
   const [topoClass, setTopoClass] = useState('全部');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   const [selectedFields, setSelectedFields] = useState<string[]>(['band_structure', 'dos', 'z2', 'params']);
-  const [selectedFormat, setSelectedFormat] = useState('csv');
+  const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('csv');
+  const [pdfDownloadUrl, setPdfDownloadUrl] = useState<string | null>(null);
+  const [exportDownloadUrl, setExportDownloadUrl] = useState<string | null>(null);
+  const [pdfSuccess, setPdfSuccess] = useState(false);
+  const [exportSuccess, setExportSuccess] = useState(false);
+
+  const {
+    exportHistory,
+    selectedTaskIds,
+    generating,
+    setSelectedTaskIds,
+    generatePDF,
+    exportData,
+    deleteHistoryItem,
+  } = useReportStore();
 
   const completedTasks = useMemo(() => {
-    return mockTasks.filter((t) => t.status === 'completed' || t.status === 'pending_supervisor_approval' || t.status === 'pending_phd_approval');
+    return mockTasks.filter(
+      (t) => t.status === 'completed' || t.status === 'pending_supervisor_approval' || t.status === 'pending_phd_approval'
+    );
   }, []);
 
   const toggleTask = (id: string) => {
-    setSelectedTasks((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setSelectedTaskIds(
+      selectedTaskIds.includes(id) ? selectedTaskIds.filter((x) => x !== id) : [...selectedTaskIds, id]
+    );
+    setPdfDownloadUrl(null);
+    setPdfSuccess(false);
   };
 
   const toggleField = (key: string) => {
-    setSelectedFields((prev) => (prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]));
+    setSelectedFields(
+      selectedFields.includes(key) ? selectedFields.filter((x) => x !== key) : [...selectedFields, key]
+    );
+  };
+
+  const handleGeneratePDF = async () => {
+    setPdfSuccess(false);
+    setPdfDownloadUrl(null);
+
+    const options: ReportGenerateOptions = {
+      includeCover: true,
+      includeBandStructure: true,
+      includeDOS: true,
+      includeTopologyAnalysis: true,
+      includeConvergence: false,
+    };
+
+    const url = await generatePDF(selectedTaskIds, options);
+    if (url) {
+      setPdfDownloadUrl(url);
+      setPdfSuccess(true);
+      setTimeout(() => setPdfSuccess(false), 3000);
+    }
+  };
+
+  const handleExportData = async () => {
+    setExportSuccess(false);
+    setExportDownloadUrl(null);
+
+    const filters: ExportFilters = {
+      system: system !== '全部' ? system : undefined,
+      spaceGroup: sg !== '全部' ? sg : undefined,
+      gapType: gapType !== '全部' ? gapType : undefined,
+      topologyClass: topoClass !== '全部' ? topoClass : undefined,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
+    };
+
+    const url = await exportData(selectedTaskIds.length > 0 ? selectedTaskIds : completedTasks.map((t) => t.id), selectedFields, selectedFormat, filters);
+    if (url) {
+      setExportDownloadUrl(url);
+      setExportSuccess(true);
+      setTimeout(() => setExportSuccess(false), 3000);
+    }
+  };
+
+  const handleDeleteHistory = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    deleteHistoryItem(id);
   };
 
   return (
@@ -84,7 +153,9 @@ export default function Reports() {
                 onChange={(e) => setSystem(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-slate-800/70 border border-slate-700 text-sm text-white focus:border-primary/50 focus:outline-none"
               >
-                {materialSystems.map((s) => <option key={s}>{s}</option>)}
+                {materialSystems.map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -94,7 +165,9 @@ export default function Reports() {
                 onChange={(e) => setSg(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-slate-800/70 border border-slate-700 text-sm text-white focus:border-primary/50 focus:outline-none"
               >
-                {spaceGroups.map((s) => <option key={s}>{s}</option>)}
+                {spaceGroups.map((s) => (
+                  <option key={s}>{s}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -104,7 +177,9 @@ export default function Reports() {
                 onChange={(e) => setGapType(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-slate-800/70 border border-slate-700 text-sm text-white focus:border-primary/50 focus:outline-none"
               >
-                {gapTypes.map((g) => <option key={g}>{g}</option>)}
+                {gapTypes.map((g) => (
+                  <option key={g}>{g}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -114,7 +189,9 @@ export default function Reports() {
                 onChange={(e) => setTopoClass(e.target.value)}
                 className="w-full px-3 py-2 rounded-lg bg-slate-800/70 border border-slate-700 text-sm text-white focus:border-primary/50 focus:outline-none"
               >
-                {topologyClasses.map((t) => <option key={t}>{t}</option>)}
+                {topologyClasses.map((t) => (
+                  <option key={t}>{t}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -154,7 +231,11 @@ export default function Reports() {
                 return (
                   <button
                     key={tab.key}
-                    onClick={() => setActiveTab(tab.key as ReportTabType)}
+                    onClick={() => {
+                      setActiveTab(tab.key as ReportTabType);
+                      setPdfSuccess(false);
+                      setExportSuccess(false);
+                    }}
                     className={cn(
                       'flex items-center gap-2 px-6 py-4 text-sm font-medium transition-colors relative',
                       active ? 'text-primary' : 'text-slate-400 hover:text-white'
@@ -170,37 +251,47 @@ export default function Reports() {
             <div className="p-6">
               {activeTab === 'pdf' ? (
                 <div className="space-y-6">
+                  {pdfSuccess && (
+                    <div className="flex items-center gap-2 p-3 rounded-lg bg-success/10 border border-success/30 text-success text-sm">
+                      <Check className="w-4 h-4" />
+                      <span>PDF报告生成成功！</span>
+                    </div>
+                  )}
+
                   <div>
                     <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-medium text-white">选择任务 (已选 {selectedTasks.length})</h3>
+                      <h3 className="text-sm font-medium text-white">
+                        选择任务 (已选 {selectedTaskIds.length})
+                      </h3>
                       <button
-                        onClick={() => setSelectedTasks(completedTasks.slice(0, 5).map((t) => t.id))}
+                        onClick={() => setSelectedTaskIds(completedTasks.slice(0, 5).map((t) => t.id))}
                         className="text-xs text-primary hover:text-cyan-300"
                       >
                         快速选择前5个
                       </button>
                     </div>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-48 overflow-y-auto p-1">
-                      {completedTasks.map((t) => (
-                        <button
-                          key={t.id}
-                          onClick={() => toggleTask(t.id)}
-                          className={cn(
-                            'p-3 rounded-lg text-left transition-all border',
-                            selectedTasks.includes(t.id)
-                              ? 'bg-primary/10 border-primary/40'
-                              : 'bg-slate-800/50 border-slate-700/50 hover:border-slate-600'
-                          )}
-                        >
-                          <div className="flex items-start justify-between mb-1">
-                            <span className="text-white font-semibold">{t.formula}</span>
-                            {selectedTasks.includes(t.id) && (
-                              <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                      {completedTasks.map((t) => {
+                        const isSelected = selectedTaskIds.includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => toggleTask(t.id)}
+                            className={cn(
+                              'p-3 rounded-lg text-left transition-all border',
+                              isSelected
+                                ? 'bg-primary/10 border-primary/40 ring-2 ring-primary/20'
+                                : 'bg-slate-800/50 border-slate-700/50 hover:border-slate-600'
                             )}
-                          </div>
-                          <p className="text-[10px] text-slate-500 truncate">{t.title}</p>
-                        </button>
-                      ))}
+                          >
+                            <div className="flex items-start justify-between mb-1">
+                              <span className="text-white font-semibold">{t.formula}</span>
+                              {isSelected && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
+                            </div>
+                            <p className="text-[10px] text-slate-500 truncate">{t.title}</p>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -211,19 +302,27 @@ export default function Reports() {
                         <span className="text-sm font-medium text-white">报告预览</span>
                       </div>
                       <div className="aspect-[3/4] bg-gradient-to-b from-slate-100 to-slate-200 rounded-lg shadow-lg flex items-center justify-center">
-                        {selectedTasks.length > 0 ? (
+                        {selectedTaskIds.length > 0 ? (
                           <div className="text-center p-6 text-slate-700 w-full">
                             <p className="font-bold text-lg mb-4">拓扑材料计算报告</p>
-                            <p className="text-xs text-slate-500 mb-6">生成日期: {formatDate(new Date().toISOString(), 'short')}</p>
+                            <p className="text-xs text-slate-500 mb-6">
+                              生成日期: {formatDate(new Date().toISOString(), 'short')}
+                            </p>
                             <div className="text-left text-xs space-y-2 px-4">
-                              <p>• 包含任务数: {selectedTasks.length}</p>
+                              <p>• 包含任务数: {selectedTaskIds.length}</p>
                               <p>• 材料体系: {system}</p>
                               <p>• 拓扑分类: {topoClass}</p>
                               <p>• 带隙类型: {gapType}</p>
                               <div className="mt-4 pt-4 border-t border-slate-300">
                                 <p className="font-semibold mb-2">摘要统计:</p>
                                 <p>总拓扑材料: {mockMaterials.length} 种</p>
-                                <p>平均带隙: {(mockMaterials.reduce((s, m) => s + m.bandGap, 0) / mockMaterials.length).toFixed(3)} eV</p>
+                                <p>
+                                  平均带隙:{' '}
+                                  {(
+                                    mockMaterials.reduce((s, m) => s + m.bandGap, 0) / mockMaterials.length
+                                  ).toFixed(3)}{' '}
+                                  eV
+                                </p>
                               </div>
                             </div>
                           </div>
@@ -263,25 +362,54 @@ export default function Reports() {
                       </div>
                       <div className="space-y-2">
                         <button
-                          disabled={selectedTasks.length === 0}
-                          className="w-full py-3 rounded-lg text-sm font-medium text-slate-900 bg-gradient-primary hover:shadow-glow-cyan transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                          onClick={handleGeneratePDF}
+                          disabled={selectedTaskIds.length === 0 || generating}
+                          className="w-full py-3 rounded-lg text-sm font-medium text-slate-900 bg-gradient-primary hover:shadow-glow-cyan transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
                         >
-                          <Plus className="w-4 h-4 inline mr-1" /> 生成 PDF 报告
+                          {generating ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" /> 生成中...
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="w-4 h-4" /> 生成 PDF 报告
+                            </>
+                          )}
                         </button>
-                        <button
-                          disabled={selectedTasks.length === 0}
-                          className="w-full py-3 rounded-lg text-sm font-medium text-white bg-slate-800 border border-slate-700 hover:bg-slate-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                        >
-                          <Download className="w-4 h-4" /> 下载报告
-                        </button>
+                        {pdfDownloadUrl ? (
+                          <a
+                            href={pdfDownloadUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full py-3 rounded-lg text-sm font-medium text-white bg-success hover:bg-success/90 transition-all flex items-center justify-center gap-1.5"
+                          >
+                            <Download className="w-4 h-4" /> 下载报告
+                          </a>
+                        ) : (
+                          <button
+                            disabled={selectedTaskIds.length === 0 || !pdfDownloadUrl}
+                            className="w-full py-3 rounded-lg text-sm font-medium text-white bg-slate-800 border border-slate-700 hover:bg-slate-700 transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                          >
+                            <Download className="w-4 h-4" /> 下载报告
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-6">
+                  {exportSuccess && (
+                    <div className="flex items-center gap-2 p-3 rounded-lg bg-success/10 border border-success/30 text-success text-sm">
+                      <Check className="w-4 h-4" />
+                      <span>数据导出成功！</span>
+                    </div>
+                  )}
+
                   <div>
-                    <h3 className="text-sm font-medium text-white mb-3">选择导出字段 ({selectedFields.length}/{exportFields.length})</h3>
+                    <h3 className="text-sm font-medium text-white mb-3">
+                      选择导出字段 ({selectedFields.length}/{exportFields.length})
+                    </h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                       {exportFields.map((f) => {
                         const Icon = f.icon;
@@ -293,13 +421,22 @@ export default function Reports() {
                             className={cn(
                               'p-3 rounded-lg text-left transition-all border',
                               selected
-                                ? 'bg-primary/10 border-primary/40'
+                                ? 'bg-primary/10 border-primary/40 ring-2 ring-primary/20'
                                 : 'bg-slate-800/50 border-slate-700/50 hover:border-slate-600'
                             )}
                           >
                             <div className="flex items-center gap-2 mb-1">
-                              <Icon className={cn('w-4 h-4', selected ? 'text-primary' : 'text-slate-500')} />
-                              <span className={cn('text-xs font-medium', selected ? 'text-white' : 'text-slate-300')}>{f.label}</span>
+                              <Icon
+                                className={cn('w-4 h-4', selected ? 'text-primary' : 'text-slate-500')}
+                              />
+                              <span
+                                className={cn(
+                                  'text-xs font-medium',
+                                  selected ? 'text-white' : 'text-slate-300'
+                                )}
+                              >
+                                {f.label}
+                              </span>
                               {selected && <Check className="w-3.5 h-3.5 text-primary ml-auto" />}
                             </div>
                           </button>
@@ -317,20 +454,30 @@ export default function Reports() {
                         return (
                           <button
                             key={f.key}
-                            onClick={() => setSelectedFormat(f.key)}
+                            onClick={() => setSelectedFormat(f.key as ExportFormat)}
                             className={cn(
                               'p-4 rounded-lg text-left transition-all border',
                               selected
-                                ? 'bg-secondary/10 border-secondary/40'
+                                ? 'bg-secondary/10 border-secondary/40 ring-2 ring-secondary/20'
                                 : 'bg-slate-800/50 border-slate-700/50 hover:border-slate-600'
                             )}
                           >
                             <div className="flex items-start gap-3">
-                              <Icon className={cn('w-6 h-6 flex-shrink-0', selected ? 'text-secondary' : 'text-slate-500')} />
+                              <Icon
+                                className={cn('w-6 h-6 flex-shrink-0', selected ? 'text-secondary' : 'text-slate-500')}
+                              />
                               <div>
-                                <p className={cn('text-sm font-medium', selected ? 'text-white' : 'text-slate-300')}>{f.label}</p>
+                                <p
+                                  className={cn(
+                                    'text-sm font-medium',
+                                    selected ? 'text-white' : 'text-slate-300'
+                                  )}
+                                >
+                                  {f.label}
+                                </p>
                                 <p className="text-[11px] text-slate-500 mt-0.5">{f.desc}</p>
                               </div>
+                              {selected && <Check className="w-4 h-4 text-secondary ml-auto" />}
                             </div>
                           </button>
                         );
@@ -340,13 +487,33 @@ export default function Reports() {
 
                   <div className="flex items-center gap-3 pt-2">
                     <button
-                      disabled={selectedFields.length === 0}
+                      onClick={handleExportData}
+                      disabled={selectedFields.length === 0 || generating}
                       className="px-6 py-2.5 rounded-lg text-sm font-medium text-slate-900 bg-gradient-secondary hover:shadow-glow-purple transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
                     >
-                      <Download className="w-4 h-4" /> 立即导出
+                      {generating ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" /> 导出中...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="w-4 h-4" /> 立即导出
+                        </>
+                      )}
                     </button>
+                    {exportDownloadUrl && (
+                      <a
+                        href={exportDownloadUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-6 py-2.5 rounded-lg text-sm font-medium text-white bg-success hover:bg-success/90 transition-all flex items-center gap-1.5"
+                      >
+                        <Download className="w-4 h-4" /> 下载
+                      </a>
+                    )}
                     <span className="text-xs text-slate-500">
-                      将导出 {completedTasks.length} 个任务的 {selectedFields.length} 类数据
+                      将导出 {selectedTaskIds.length > 0 ? selectedTaskIds.length : completedTasks.length} 个任务的{' '}
+                      {selectedFields.length} 类数据
                     </span>
                   </div>
 
@@ -354,36 +521,56 @@ export default function Reports() {
                     <div className="flex items-center gap-2 mb-3">
                       <History className="w-4 h-4 text-slate-400" />
                       <h3 className="text-sm font-medium text-white">历史导出记录</h3>
+                      <span className="text-xs text-slate-500">({exportHistory.length})</span>
                     </div>
                     <div className="space-y-2">
-                      {exportHistory.map((h) => (
-                        <div
-                          key={h.id}
-                          className="flex items-center gap-4 p-3 rounded-lg bg-slate-800/30 border border-slate-700/30 hover:bg-slate-800/50 transition-colors"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-white font-medium truncate">{h.name}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">
-                              {h.format} · {h.fields} 个字段 · {h.size} · {h.date}
-                            </p>
-                          </div>
-                          <span className={cn(
-                            'px-2 py-0.5 rounded text-[10px] font-medium',
-                            h.status === '完成' ? 'bg-success/15 text-success' : 'bg-slate-700 text-slate-400'
-                          )}>
-                            {h.status}
-                          </span>
-                          <div className="flex items-center gap-1">
-                            <button className="p-1.5 rounded-md text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors">
-                              <Download className="w-4 h-4" />
-                            </button>
-                            <button className="p-1.5 rounded-md text-slate-400 hover:text-danger hover:bg-danger/10 transition-colors">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                            <ChevronRight className="w-4 h-4 text-slate-600" />
-                          </div>
+                      {exportHistory.length === 0 ? (
+                        <div className="text-center py-8 text-slate-500">
+                          <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">暂无导出记录</p>
                         </div>
-                      ))}
+                      ) : (
+                        exportHistory.map((item) => (
+                          <div
+                            key={item.id}
+                            className="flex items-center gap-4 p-3 rounded-lg bg-slate-800/30 border border-slate-700/30 hover:bg-slate-800/50 transition-colors"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-white font-medium truncate">{item.filename}</p>
+                              <p className="text-xs text-slate-500 mt-0.5">
+                                包含 {item.taskIds.length} 个任务 · {item.size} ·{' '}
+                                {formatDate(item.createdAt, 'full')}
+                              </p>
+                            </div>
+                            <span
+                              className={cn(
+                                'px-2 py-0.5 rounded text-[10px] font-medium uppercase',
+                                formatBadgeColors[item.type] || 'bg-slate-700 text-slate-400'
+                              )}
+                            >
+                              {item.type}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <a
+                                href={item.downloadUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1.5 rounded-md text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Download className="w-4 h-4" />
+                              </a>
+                              <button
+                                onClick={(e) => handleDeleteHistory(item.id, e)}
+                                className="p-1.5 rounded-md text-slate-400 hover:text-danger hover:bg-danger/10 transition-colors"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                              <ChevronRight className="w-4 h-4 text-slate-600" />
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>

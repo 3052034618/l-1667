@@ -143,9 +143,7 @@ export default function Tasks() {
 
   const handleDelete = (id: string) => {
     if (confirm('确定要删除此任务吗？此操作不可撤销。')) {
-      useTaskStore.setState((state) => ({
-        tasks: state.tasks.filter((t) => t.id !== id),
-      }));
+      useTaskStore.getState().deleteTask(id);
     }
   };
 

@@ -11,10 +11,10 @@ type RoleTab = {
 };
 
 const ROLE_TABS: RoleTab[] = [
-  { key: 'phd_student', label: '博士生', icon: <GraduationCap size={18} />, defaultUser: 'phd' },
-  { key: 'supervisor', label: '导师', icon: <User size={18} />, defaultUser: 'supervisor' },
-  { key: 'chief_scientist', label: '首席科学家', icon: <Crown size={18} />, defaultUser: 'chief' },
-  { key: 'admin', label: '管理员', icon: <Shield size={18} />, defaultUser: 'admin' },
+  { key: 'phd_student', label: '博士生', icon: <GraduationCap size={18} />, defaultUser: 'liuxiaoming' },
+  { key: 'supervisor', label: '导师', icon: <User size={18} />, defaultUser: 'wangsupervisor' },
+  { key: 'chief_scientist', label: '首席科学家', icon: <Crown size={18} />, defaultUser: 'chenchief' },
+  { key: 'admin', label: '管理员', icon: <Shield size={18} />, defaultUser: 'admin01' },
 ];
 
 interface Particle {
@@ -35,7 +35,7 @@ export default function Login() {
   const setRememberMe = useAuthStore((s) => s.setRememberMe);
 
   const [activeRole, setActiveRole] = useState<UserRole>('phd_student');
-  const [username, setUsername] = useState('phd');
+  const [username, setUsername] = useState('liuxiaoming');
   const [password, setPassword] = useState('123456');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -145,12 +145,12 @@ export default function Login() {
     }
     setLoading(true);
     setError('');
-    const ok = await login(username, password, activeRole, rememberMe);
+    const result = await login(username, password);
     setLoading(false);
-    if (ok) {
+    if (result.success) {
       navigate('/dashboard', { replace: true });
     } else {
-      setError('用户名、密码或角色不匹配');
+      setError(result.message || '用户名或密码错误');
     }
   };
 
@@ -263,7 +263,7 @@ export default function Login() {
               </button>
 
               <div className="pt-2 text-center text-xs text-slate-500 space-y-1">
-                <p>测试账号：phd / supervisor / chief / admin</p>
+                <p>测试账号：liuxiaoming / wangsupervisor / chenchief / admin01</p>
                 <p>密码统一：123456 （请选择对应角色Tab）</p>
               </div>
             </form>
